@@ -61,26 +61,29 @@ export default function Home() {
     const circleRadius = Math.min(canvas.width, canvas.height) * (size / 100)
 
     // Create a temporary canvas for the photo with feathering
+    // FIXED SIZE - image scale doesn't change when circle size changes
     const tempCanvas = document.createElement('canvas')
     const tempCtx = tempCanvas.getContext('2d')!
 
-    // Fixed canvas size based on circle radius - this is the actual crop size
-    const cropSize = circleRadius * 2
-    tempCanvas.width = cropSize
-    tempCanvas.height = cropSize
+    // Use a fixed large enough size for the temp canvas
+    // This ensures the image stays at consistent scale
+    const maxRadius = Math.min(canvas.width, canvas.height) * 0.30 // Fixed at 30% max
+    const fixedSize = maxRadius * 2 + 100 // Extra space for feathering
+    tempCanvas.width = fixedSize
+    tempCanvas.height = fixedSize
 
-    // Calculate image dimensions to fill the circle (cover mode)
-    const scale = Math.max(cropSize / img.width, cropSize / img.height)
+    // Calculate image dimensions at FIXED scale (doesn't change with circle size)
+    const scale = (maxRadius * 2) / Math.max(img.width, img.height) * 1.2
     const scaledWidth = img.width * scale
     const scaledHeight = img.height * scale
 
     // Center image on temp canvas
-    const tempX = (cropSize - scaledWidth) / 2
-    const tempY = (cropSize - scaledHeight) / 2
+    const tempX = (fixedSize - scaledWidth) / 2
+    const tempY = (fixedSize - scaledHeight) / 2
     tempCtx.drawImage(img, tempX, tempY, scaledWidth, scaledHeight)
 
     // Convert to grayscale on temp canvas
-    const imageData = tempCtx.getImageData(0, 0, cropSize, cropSize)
+    const imageData = tempCtx.getImageData(0, 0, fixedSize, fixedSize)
     const data = imageData.data
 
     for (let i = 0; i < data.length; i += 4) {
@@ -92,28 +95,38 @@ export default function Home() {
 
     tempCtx.putImageData(imageData, 0, 0)
 
-    // Create proper feather effect using alpha mask
-    // Feather amount: 0 = no feather (sharp edge), 100 = maximum feather
-    const innerRadius = circleRadius * (1 - feather / 200) // Inner radius shrinks as feather increases
-    const outerRadius = circleRadius // Outer radius stays at circle edge
+    // Create circular mask with feathering
+    const featherRadius = (feather / 100) * 50 // Max 50px feather
 
-    const gradient = tempCtx.createRadialGradient(
-      cropSize / 2, cropSize / 2, innerRadius,
-      cropSize / 2, cropSize / 2, outerRadius
-    )
-    gradient.addColorStop(0, 'rgba(0, 0, 0, 1)')   // Fully opaque at center
-    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)')   // Transparent at edge
+    if (feather === 0) {
+      // No feathering - simple circular clip
+      tempCtx.globalCompositeOperation = 'destination-in'
+      tempCtx.beginPath()
+      tempCtx.arc(fixedSize / 2, fixedSize / 2, circleRadius, 0, Math.PI * 2)
+      tempCtx.fill()
+    } else {
+      // With feathering - use gradient
+      const innerRadius = Math.max(0, circleRadius - featherRadius)
+      const outerRadius = circleRadius
 
-    tempCtx.globalCompositeOperation = 'destination-in'
-    tempCtx.fillStyle = gradient
-    tempCtx.fillRect(0, 0, cropSize, cropSize)
+      const gradient = tempCtx.createRadialGradient(
+        fixedSize / 2, fixedSize / 2, innerRadius,
+        fixedSize / 2, fixedSize / 2, outerRadius
+      )
+      gradient.addColorStop(0, 'rgba(0, 0, 0, 1)')
+      gradient.addColorStop(1, 'rgba(0, 0, 0, 0)')
+
+      tempCtx.globalCompositeOperation = 'destination-in'
+      tempCtx.fillStyle = gradient
+      tempCtx.fillRect(0, 0, fixedSize, fixedSize)
+    }
 
     // Draw the feathered photo onto the main canvas (centered)
     ctx.globalCompositeOperation = 'source-over'
     ctx.drawImage(
       tempCanvas,
-      centerX - cropSize / 2,
-      centerY - cropSize / 2
+      centerX - fixedSize / 2,
+      centerY - fixedSize / 2
     )
 
     // Add deceased name if provided - DRAWN LAST for top layer
