@@ -112,19 +112,19 @@ export default function Home() {
     // Add deceased name if provided - DRAWN LAST for top layer
     if (name.trim()) {
       const fontSize = Math.max(36, canvas.width * 0.045)
-      const nameY = centerY + circleRadius + 90
+      const nameY = centerY + circleRadius + 50 // Moved up from +90
 
       // Draw shadow for better visibility
       ctx.save()
       ctx.textAlign = 'center'
-      ctx.font = `bold ${fontSize}px serif`
+      ctx.font = `bold ${fontSize}px Arial` // Standard font
 
-      // Shadow
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)'
+      // Shadow (black shadow for white text)
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
       ctx.fillText(name.toUpperCase(), centerX + 2, nameY + 2)
 
-      // Main text
-      ctx.fillStyle = '#000000'
+      // Main text (white)
+      ctx.fillStyle = '#FFFFFF'
       ctx.fillText(name.toUpperCase(), centerX, nameY)
       ctx.restore()
 
