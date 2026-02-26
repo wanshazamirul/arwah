@@ -196,7 +196,6 @@ export default function Home() {
               {/* Upload Section */}
               <div className="mb-6">
                 <label
-                  onClick={() => fileInputRef.current?.click()}
                   className="flex flex-col items-center justify-center w-full h-64 border-2 border-dashed border-slate-600 rounded-xl cursor-pointer hover:border-slate-400 hover:bg-slate-700/30 transition-all"
                 >
                   {uploadedImage ? (
