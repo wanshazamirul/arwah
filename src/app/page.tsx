@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Download, Upload, X } from 'lucide-react'
 
 export default function Home() {
   const [uploadedImage, setUploadedImage] = useState<string | null>(null)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [processedImage, setProcessedImage] = useState<string | null>(null)
+  const [livePreview, setLivePreview] = useState<string | null>(null)
   const [deceasedName, setDeceasedName] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
 
@@ -17,10 +18,21 @@ export default function Home() {
   const [featherAmount, setFeatherAmount] = useState(30) // Feather percentage (0-100)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const previewTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Process image with canvas
-  const processImage = async (file: File, name: string) => {
-    setIsProcessing(true)
+  // Process image with canvas (shared function for both preview and final)
+  const processImage = async (
+    file: File,
+    name: string,
+    options: {
+      circleSize: number
+      offsetX: number
+      offsetY: number
+      featherAmount: number
+      isPreview?: boolean
+    }
+  ): Promise<string | null> => {
+    const { circleSize: size, offsetX: offX, offsetY: offY, featherAmount: feather, isPreview = false } = options
 
     const img = new Image()
     const template = new Image()
@@ -48,14 +60,14 @@ export default function Home() {
     ctx.drawImage(template, 0, 0)
 
     // Calculate circular crop position (with manual offsets)
-    const centerX = canvas.width / 2 + offsetX
-    const centerY = canvas.height / 2 + offsetY
-    const circleRadius = Math.min(canvas.width, canvas.height) * (circleSize / 100)
+    const centerX = canvas.width / 2 + offX
+    const centerY = canvas.height / 2 + offY
+    const circleRadius = Math.min(canvas.width, canvas.height) * (size / 100)
 
     // Create a temporary canvas for the photo with feathering
     const tempCanvas = document.createElement('canvas')
     const tempCtx = tempCanvas.getContext('2d')!
-    const tempSize = circleRadius * 2 + (circleRadius * featherAmount / 100) * 2
+    const tempSize = circleRadius * 2 + (circleRadius * feather / 100) * 2
     tempCanvas.width = tempSize
     tempCanvas.height = tempSize
 
@@ -83,16 +95,14 @@ export default function Home() {
     tempCtx.putImageData(imageData, 0, 0)
 
     // Create proper feather effect using alpha mask
-    // Create radial gradient from opaque to transparent
-    const featherSize = circleRadius * featherAmount / 100
+    const featherSize = circleRadius * feather / 100
     const gradient = tempCtx.createRadialGradient(
       tempSize / 2, tempSize / 2, circleRadius * 0.7,
       tempSize / 2, tempSize / 2, circleRadius + featherSize
     )
-    gradient.addColorStop(0, 'rgba(0, 0, 0, 1)') // Fully opaque
-    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)') // Fully transparent
+    gradient.addColorStop(0, 'rgba(0, 0, 0, 1)')
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)')
 
-    // Apply gradient as alpha mask using destination-in
     tempCtx.globalCompositeOperation = 'destination-in'
     tempCtx.fillStyle = gradient
     tempCtx.fillRect(0, 0, tempSize, tempSize)
@@ -110,32 +120,60 @@ export default function Home() {
       const fontSize = Math.max(36, canvas.width * 0.045)
       const nameY = centerY + circleRadius + 50
 
-      // Draw shadow for better visibility
       ctx.save()
       ctx.textAlign = 'center'
       ctx.font = `bold ${fontSize}px Arial`
 
-      // Shadow (black shadow for white text)
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
       ctx.fillText(name.toUpperCase(), centerX + 2, nameY + 2)
 
-      // Main text (white)
       ctx.fillStyle = '#FFFFFF'
       ctx.fillText(name.toUpperCase(), centerX, nameY)
       ctx.restore()
 
-      console.log('Name drawn:', name.toUpperCase(), 'at Y:', nameY, 'font size:', fontSize)
+      if (!isPreview) {
+        console.log('Name drawn:', name.toUpperCase(), 'at Y:', nameY, 'font size:', fontSize)
+      }
     }
 
     // Convert to blob
-    canvas.toBlob((blob) => {
-      if (blob) {
-        const url = URL.createObjectURL(blob)
-        setProcessedImage(url)
-        setIsProcessing(false)
-      }
-    }, 'image/png')
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const url = URL.createObjectURL(blob)
+          resolve(url)
+        } else {
+          resolve(null)
+        }
+      }, 'image/png')
+    })
   }
+
+  // Update live preview when controls change
+  useEffect(() => {
+    if (uploadedFile) {
+      // Debounce preview updates for performance
+      if (previewTimeoutRef.current) {
+        clearTimeout(previewTimeoutRef.current)
+      }
+
+      previewTimeoutRef.current = setTimeout(() => {
+        processImage(uploadedFile, deceasedName, {
+          circleSize,
+          offsetX,
+          offsetY,
+          featherAmount,
+          isPreview: true
+        }).then(setLivePreview)
+      }, 100)
+    }
+
+    return () => {
+      if (previewTimeoutRef.current) {
+        clearTimeout(previewTimeoutRef.current)
+      }
+    }
+  }, [circleSize, offsetX, offsetY, featherAmount, deceasedName, uploadedFile])
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -150,9 +188,17 @@ export default function Home() {
     }
   }
 
-  const handleProcess = () => {
+  const handleProcess = async () => {
     if (uploadedFile) {
-      processImage(uploadedFile, deceasedName)
+      setIsProcessing(true)
+      const result = await processImage(uploadedFile, deceasedName, {
+        circleSize,
+        offsetX,
+        offsetY,
+        featherAmount
+      })
+      setProcessedImage(result)
+      setIsProcessing(false)
     }
   }
 
@@ -169,6 +215,7 @@ export default function Home() {
     setUploadedImage(null)
     setUploadedFile(null)
     setProcessedImage(null)
+    setLivePreview(null)
     setDeceasedName('')
     setCircleSize(18)
     setOffsetX(0)
@@ -181,7 +228,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl">
+      <div className="w-full max-w-3xl">
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-white mb-2">Arwah</h1>
@@ -230,6 +277,20 @@ export default function Home() {
                   />
                 </label>
               </div>
+
+              {/* Live Preview */}
+              {livePreview && (
+                <div className="mb-6">
+                  <h3 className="text-white font-medium mb-3">Live Preview</h3>
+                  <div className="border-2 border-emerald-500 rounded-lg overflow-hidden">
+                    <img
+                      src={livePreview}
+                      alt="Live preview"
+                      className="w-full"
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* Name Input (Optional) */}
               <div className="mb-6">
@@ -330,7 +391,7 @@ export default function Home() {
                 ) : (
                   <>
                     <Upload size={20} />
-                    Generate Card
+                    Generate Final Card
                   </>
                 )}
               </button>
