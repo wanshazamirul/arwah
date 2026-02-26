@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { Download, Upload, X } from 'lucide-react'
 
 export default function Home() {
@@ -11,7 +11,7 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Process image with canvas
-  const processImage = async (file: File) => {
+  const processImage = async (file: File, name: string) => {
     setIsProcessing(true)
 
     const img = new Image()
@@ -32,39 +32,64 @@ export default function Home() {
 
     await Promise.all([loadImg(URL.createObjectURL(file)), loadTemplate()])
 
-    // Canvas size based on template (A4 ratio at high DPI)
-    canvas.width = 1240
-    canvas.height = 1754
+    // Use template's actual dimensions to maintain ratio
+    canvas.width = template.width
+    canvas.height = template.height
 
-    // Draw template background
-    ctx.drawImage(template, 0, 0, canvas.width, canvas.height)
+    // Draw template background at original size
+    ctx.drawImage(template, 0, 0)
 
     // Calculate circular crop position (center of template)
     const centerX = canvas.width / 2
     const centerY = canvas.height / 2 - 50
-    const circleRadius = 220
+    const circleRadius = Math.min(canvas.width, canvas.height) * 0.18 // Smaller circle, less crop
 
-    // Create circular clip with feathered edges
+    // Create circular clip
     ctx.save()
     ctx.beginPath()
     ctx.arc(centerX, centerY, circleRadius, 0, Math.PI * 2)
     ctx.clip()
 
-    // Calculate image dimensions to cover circle
-    const scale = Math.max((circleRadius * 2) / img.width, (circleRadius * 2) / img.height) * 1.5
+    // Calculate image dimensions to fit circle (less aggressive scaling)
+    const scale = (circleRadius * 2) / Math.max(img.width, img.height) * 1.2 // Reduced from 1.5
     const scaledWidth = img.width * scale
     const scaledHeight = img.height * scale
     const x = centerX - scaledWidth / 2
     const y = centerY - scaledHeight / 2
 
-    // Draw uploaded image
+    // Draw uploaded image in color first
     ctx.drawImage(img, x, y, scaledWidth, scaledHeight)
     ctx.restore()
 
-    // Add feather effect (gradient at edges)
-    const gradient = ctx.createRadialGradient(centerX, centerY, circleRadius * 0.7, centerX, centerY, circleRadius)
+    // Convert circular area to grayscale
+    ctx.save()
+    ctx.beginPath()
+    ctx.arc(centerX, centerY, circleRadius, 0, Math.PI * 2)
+    ctx.clip()
+
+    // Get image data and convert to grayscale
+    const imageData = ctx.getImageData(
+      centerX - circleRadius,
+      centerY - circleRadius,
+      circleRadius * 2,
+      circleRadius * 2
+    )
+    const data = imageData.data
+
+    for (let i = 0; i < data.length; i += 4) {
+      const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114
+      data[i] = gray     // R
+      data[i + 1] = gray // G
+      data[i + 2] = gray // B
+    }
+
+    ctx.putImageData(imageData, centerX - circleRadius, centerY - circleRadius)
+    ctx.restore()
+
+    // Add subtle feather effect (lighter than before)
+    const gradient = ctx.createRadialGradient(centerX, centerY, circleRadius * 0.85, centerX, centerY, circleRadius)
     gradient.addColorStop(0, 'rgba(0,0,0,0)')
-    gradient.addColorStop(1, 'rgba(0,0,0,0.3)')
+    gradient.addColorStop(1, 'rgba(0,0,0,0.15)') // Reduced from 0.3
 
     ctx.fillStyle = gradient
     ctx.beginPath()
@@ -72,15 +97,16 @@ export default function Home() {
     ctx.fill()
 
     // Add deceased name if provided
-    if (deceasedName.trim()) {
+    if (name.trim()) {
       ctx.save()
       ctx.textAlign = 'center'
       ctx.fillStyle = '#000000'
 
       // Draw name below the image
       const nameY = centerY + circleRadius + 80
-      ctx.font = 'bold 48px serif'
-      ctx.fillText(deceasedName.toUpperCase(), centerX, nameY)
+      const fontSize = Math.max(32, canvas.width * 0.04) // Responsive font size
+      ctx.font = `bold ${fontSize}px serif`
+      ctx.fillText(name.toUpperCase(), centerX, nameY)
       ctx.restore()
     }
 
@@ -108,7 +134,7 @@ export default function Home() {
 
   const handleProcess = () => {
     if (uploadedImage && fileInputRef.current?.files?.[0]) {
-      processImage(fileInputRef.current.files[0])
+      processImage(fileInputRef.current.files[0], deceasedName)
     }
   }
 
