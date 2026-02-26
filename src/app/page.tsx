@@ -5,10 +5,17 @@ import { Download, Upload, X } from 'lucide-react'
 
 export default function Home() {
   const [uploadedImage, setUploadedImage] = useState<string | null>(null)
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null) // Store actual File object
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [processedImage, setProcessedImage] = useState<string | null>(null)
   const [deceasedName, setDeceasedName] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
+
+  // Manual crop controls
+  const [circleSize, setCircleSize] = useState(18) // Percentage of min dimension
+  const [offsetX, setOffsetX] = useState(0) // Horizontal offset
+  const [offsetY, setOffsetY] = useState(-50) // Vertical offset
+  const [featherAmount, setFeatherAmount] = useState(30) // Feather percentage (0-100)
+
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Process image with canvas
@@ -40,84 +47,73 @@ export default function Home() {
     // Draw template background at original size
     ctx.drawImage(template, 0, 0)
 
-    // Calculate circular crop position (center of template)
-    const centerX = canvas.width / 2
-    const centerY = canvas.height / 2 - 50
-    const circleRadius = Math.min(canvas.width, canvas.height) * 0.18
+    // Calculate circular crop position (with manual offsets)
+    const centerX = canvas.width / 2 + offsetX
+    const centerY = canvas.height / 2 + offsetY
+    const circleRadius = Math.min(canvas.width, canvas.height) * (circleSize / 100)
 
-    // Create circular clip for uploaded photo
-    ctx.save()
-    ctx.beginPath()
-    ctx.arc(centerX, centerY, circleRadius, 0, Math.PI * 2)
-    ctx.clip()
+    // Create a temporary canvas for the photo with feathering
+    const tempCanvas = document.createElement('canvas')
+    const tempCtx = tempCanvas.getContext('2d')!
+    const tempSize = circleRadius * 2 + (circleRadius * featherAmount / 100) * 2
+    tempCanvas.width = tempSize
+    tempCanvas.height = tempSize
 
     // Calculate image dimensions to fit circle
     const scale = (circleRadius * 2) / Math.max(img.width, img.height) * 1.2
     const scaledWidth = img.width * scale
     const scaledHeight = img.height * scale
-    const x = centerX - scaledWidth / 2
-    const y = centerY - scaledHeight / 2
 
-    // Draw uploaded image in color first
-    ctx.drawImage(img, x, y, scaledWidth, scaledHeight)
+    // Draw image on temp canvas
+    const tempX = (tempSize - scaledWidth) / 2
+    const tempY = (tempSize - scaledHeight) / 2
+    tempCtx.drawImage(img, tempX, tempY, scaledWidth, scaledHeight)
 
-    // Convert to grayscale
-    const imageData = ctx.getImageData(
-      centerX - circleRadius,
-      centerY - circleRadius,
-      circleRadius * 2,
-      circleRadius * 2
-    )
+    // Convert to grayscale on temp canvas
+    const imageData = tempCtx.getImageData(0, 0, tempSize, tempSize)
     const data = imageData.data
 
     for (let i = 0; i < data.length; i += 4) {
       const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114
-      data[i] = gray     // R
-      data[i + 1] = gray // G
-      data[i + 2] = gray // B
+      data[i] = gray
+      data[i + 1] = gray
+      data[i + 2] = gray
     }
 
-    ctx.putImageData(imageData, centerX - circleRadius, centerY - circleRadius)
-    ctx.restore()
+    tempCtx.putImageData(imageData, 0, 0)
 
-    // Add feather effect OUTSIDE the circle edge
-    // This creates a soft transition from the circle to the background
-    ctx.save()
-    ctx.globalCompositeOperation = 'source-over'
-
-    // Create gradient from transparent (at circle edge) to white (outside)
-    const featherRadius = circleRadius * 1.15 // 15% feather outside
-    const gradient = ctx.createRadialGradient(
-      centerX, centerY, circleRadius * 0.95,
-      centerX, centerY, featherRadius
+    // Create proper feather effect using alpha mask
+    // Create radial gradient from opaque to transparent
+    const featherSize = circleRadius * featherAmount / 100
+    const gradient = tempCtx.createRadialGradient(
+      tempSize / 2, tempSize / 2, circleRadius * 0.7,
+      tempSize / 2, tempSize / 2, circleRadius + featherSize
     )
-    gradient.addColorStop(0, 'rgba(255, 255, 255, 0)')
-    gradient.addColorStop(0.7, 'rgba(255, 255, 255, 0.5)')
-    gradient.addColorStop(1, 'rgba(255, 255, 255, 0.8)')
+    gradient.addColorStop(0, 'rgba(0, 0, 0, 1)') // Fully opaque
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)') // Fully transparent
 
-    // Draw feather ring outside the circle
-    ctx.fillStyle = gradient
-    ctx.beginPath()
-    ctx.arc(centerX, centerY, featherRadius, 0, Math.PI * 2)
-    ctx.fill()
+    // Apply gradient as alpha mask using destination-in
+    tempCtx.globalCompositeOperation = 'destination-in'
+    tempCtx.fillStyle = gradient
+    tempCtx.fillRect(0, 0, tempSize, tempSize)
 
-    // Clear the inner part to show the photo clearly
-    ctx.globalCompositeOperation = 'destination-out'
-    ctx.beginPath()
-    ctx.arc(centerX, centerY, circleRadius, 0, Math.PI * 2)
-    ctx.fill()
-
-    ctx.restore()
+    // Draw the feathered photo onto the main canvas
+    ctx.globalCompositeOperation = 'source-over'
+    ctx.drawImage(
+      tempCanvas,
+      centerX - tempSize / 2,
+      centerY - tempSize / 2
+    )
 
     // Add deceased name if provided - DRAWN LAST for top layer
     if (name.trim()) {
       const fontSize = Math.max(36, canvas.width * 0.045)
-      const nameY = centerY + circleRadius + 50 // Moved up from +90
+      const nameY = centerY + circleRadius + 50
 
       // Draw shadow for better visibility
       ctx.save()
       ctx.textAlign = 'center'
-      ctx.font = `bold ${fontSize}px Arial` // Standard font
+      ctx.font = `bold ${fontSize}px Arial`
 
       // Shadow (black shadow for white text)
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
@@ -144,7 +140,7 @@ export default function Home() {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      setUploadedFile(file) // Store the File object
+      setUploadedFile(file)
       const reader = new FileReader()
       reader.onload = (e) => {
         setUploadedImage(e.target?.result as string)
@@ -155,7 +151,6 @@ export default function Home() {
   }
 
   const handleProcess = () => {
-    // Use the stored File object instead of reading from input again
     if (uploadedFile) {
       processImage(uploadedFile, deceasedName)
     }
@@ -172,9 +167,13 @@ export default function Home() {
 
   const handleReset = () => {
     setUploadedImage(null)
-    setUploadedFile(null) // Clear the File object
+    setUploadedFile(null)
     setProcessedImage(null)
     setDeceasedName('')
+    setCircleSize(18)
+    setOffsetX(0)
+    setOffsetY(-50)
+    setFeatherAmount(30)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -245,6 +244,77 @@ export default function Home() {
                   className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400"
                 />
               </div>
+
+              {/* Manual Crop Controls */}
+              {uploadedImage && (
+                <div className="mb-6 p-4 bg-slate-700/50 rounded-lg space-y-4">
+                  <h3 className="text-white font-medium mb-3">Adjust Crop & Feather</h3>
+
+                  {/* Circle Size */}
+                  <div>
+                    <label className="text-slate-300 text-sm flex justify-between mb-1">
+                      <span>Circle Size</span>
+                      <span className="text-slate-400">{circleSize}%</span>
+                    </label>
+                    <input
+                      type="range"
+                      min="10"
+                      max="30"
+                      value={circleSize}
+                      onChange={(e) => setCircleSize(Number(e.target.value))}
+                      className="w-full accent-emerald-500"
+                    />
+                  </div>
+
+                  {/* Horizontal Position */}
+                  <div>
+                    <label className="text-slate-300 text-sm flex justify-between mb-1">
+                      <span>Horizontal Position</span>
+                      <span className="text-slate-400">{offsetX}px</span>
+                    </label>
+                    <input
+                      type="range"
+                      min="-200"
+                      max="200"
+                      value={offsetX}
+                      onChange={(e) => setOffsetX(Number(e.target.value))}
+                      className="w-full accent-emerald-500"
+                    />
+                  </div>
+
+                  {/* Vertical Position */}
+                  <div>
+                    <label className="text-slate-300 text-sm flex justify-between mb-1">
+                      <span>Vertical Position</span>
+                      <span className="text-slate-400">{offsetY}px</span>
+                    </label>
+                    <input
+                      type="range"
+                      min="-200"
+                      max="200"
+                      value={offsetY}
+                      onChange={(e) => setOffsetY(Number(e.target.value))}
+                      className="w-full accent-emerald-500"
+                    />
+                  </div>
+
+                  {/* Feather Amount */}
+                  <div>
+                    <label className="text-slate-300 text-sm flex justify-between mb-1">
+                      <span>Feather Amount</span>
+                      <span className="text-slate-400">{featherAmount}%</span>
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={featherAmount}
+                      onChange={(e) => setFeatherAmount(Number(e.target.value))}
+                      className="w-full accent-emerald-500"
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* Process Button */}
               <button
