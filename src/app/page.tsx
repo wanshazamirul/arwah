@@ -5,6 +5,7 @@ import { Download, Upload, X } from 'lucide-react'
 
 export default function Home() {
   const [uploadedImage, setUploadedImage] = useState<string | null>(null)
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null) // Store actual File object
   const [processedImage, setProcessedImage] = useState<string | null>(null)
   const [deceasedName, setDeceasedName] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
@@ -143,6 +144,7 @@ export default function Home() {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
+      setUploadedFile(file) // Store the File object
       const reader = new FileReader()
       reader.onload = (e) => {
         setUploadedImage(e.target?.result as string)
@@ -153,8 +155,9 @@ export default function Home() {
   }
 
   const handleProcess = () => {
-    if (uploadedImage && fileInputRef.current?.files?.[0]) {
-      processImage(fileInputRef.current.files[0], deceasedName)
+    // Use the stored File object instead of reading from input again
+    if (uploadedFile) {
+      processImage(uploadedFile, deceasedName)
     }
   }
 
@@ -169,6 +172,7 @@ export default function Home() {
 
   const handleReset = () => {
     setUploadedImage(null)
+    setUploadedFile(null) // Clear the File object
     setProcessedImage(null)
     setDeceasedName('')
     if (fileInputRef.current) {
@@ -246,7 +250,7 @@ export default function Home() {
               {/* Process Button */}
               <button
                 onClick={handleProcess}
-                disabled={!uploadedImage || isProcessing}
+                disabled={!uploadedFile || isProcessing}
                 className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-all flex items-center justify-center gap-2"
               >
                 {isProcessing ? (
