@@ -42,16 +42,16 @@ export default function Home() {
     // Calculate circular crop position (center of template)
     const centerX = canvas.width / 2
     const centerY = canvas.height / 2 - 50
-    const circleRadius = Math.min(canvas.width, canvas.height) * 0.18 // Smaller circle, less crop
+    const circleRadius = Math.min(canvas.width, canvas.height) * 0.18
 
-    // Create circular clip
+    // Create circular clip for uploaded photo
     ctx.save()
     ctx.beginPath()
     ctx.arc(centerX, centerY, circleRadius, 0, Math.PI * 2)
     ctx.clip()
 
-    // Calculate image dimensions to fit circle (less aggressive scaling)
-    const scale = (circleRadius * 2) / Math.max(img.width, img.height) * 1.2 // Reduced from 1.5
+    // Calculate image dimensions to fit circle
+    const scale = (circleRadius * 2) / Math.max(img.width, img.height) * 1.2
     const scaledWidth = img.width * scale
     const scaledHeight = img.height * scale
     const x = centerX - scaledWidth / 2
@@ -59,15 +59,8 @@ export default function Home() {
 
     // Draw uploaded image in color first
     ctx.drawImage(img, x, y, scaledWidth, scaledHeight)
-    ctx.restore()
 
-    // Convert circular area to grayscale
-    ctx.save()
-    ctx.beginPath()
-    ctx.arc(centerX, centerY, circleRadius, 0, Math.PI * 2)
-    ctx.clip()
-
-    // Get image data and convert to grayscale
+    // Convert to grayscale
     const imageData = ctx.getImageData(
       centerX - circleRadius,
       centerY - circleRadius,
@@ -86,28 +79,55 @@ export default function Home() {
     ctx.putImageData(imageData, centerX - circleRadius, centerY - circleRadius)
     ctx.restore()
 
-    // Add subtle feather effect (lighter than before)
-    const gradient = ctx.createRadialGradient(centerX, centerY, circleRadius * 0.85, centerX, centerY, circleRadius)
-    gradient.addColorStop(0, 'rgba(0,0,0,0)')
-    gradient.addColorStop(1, 'rgba(0,0,0,0.15)') // Reduced from 0.3
+    // Add feather effect OUTSIDE the circle edge
+    // This creates a soft transition from the circle to the background
+    ctx.save()
+    ctx.globalCompositeOperation = 'source-over'
 
+    // Create gradient from transparent (at circle edge) to white (outside)
+    const featherRadius = circleRadius * 1.15 // 15% feather outside
+    const gradient = ctx.createRadialGradient(
+      centerX, centerY, circleRadius * 0.95,
+      centerX, centerY, featherRadius
+    )
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 0)')
+    gradient.addColorStop(0.7, 'rgba(255, 255, 255, 0.5)')
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0.8)')
+
+    // Draw feather ring outside the circle
     ctx.fillStyle = gradient
+    ctx.beginPath()
+    ctx.arc(centerX, centerY, featherRadius, 0, Math.PI * 2)
+    ctx.fill()
+
+    // Clear the inner part to show the photo clearly
+    ctx.globalCompositeOperation = 'destination-out'
     ctx.beginPath()
     ctx.arc(centerX, centerY, circleRadius, 0, Math.PI * 2)
     ctx.fill()
 
-    // Add deceased name if provided
+    ctx.restore()
+
+    // Add deceased name if provided - DRAWN LAST for top layer
     if (name.trim()) {
+      const fontSize = Math.max(36, canvas.width * 0.045)
+      const nameY = centerY + circleRadius + 90
+
+      // Draw shadow for better visibility
       ctx.save()
       ctx.textAlign = 'center'
-      ctx.fillStyle = '#000000'
-
-      // Draw name below the image
-      const nameY = centerY + circleRadius + 80
-      const fontSize = Math.max(32, canvas.width * 0.04) // Responsive font size
       ctx.font = `bold ${fontSize}px serif`
+
+      // Shadow
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)'
+      ctx.fillText(name.toUpperCase(), centerX + 2, nameY + 2)
+
+      // Main text
+      ctx.fillStyle = '#000000'
       ctx.fillText(name.toUpperCase(), centerX, nameY)
       ctx.restore()
+
+      console.log('Name drawn:', name.toUpperCase(), 'at Y:', nameY, 'font size:', fontSize)
     }
 
     // Convert to blob
