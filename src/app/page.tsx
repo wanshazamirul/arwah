@@ -1,65 +1,257 @@
-import Image from "next/image";
+'use client'
+
+import { useState, useRef, useEffect } from 'react'
+import { Download, Upload, X } from 'lucide-react'
 
 export default function Home() {
+  const [uploadedImage, setUploadedImage] = useState<string | null>(null)
+  const [processedImage, setProcessedImage] = useState<string | null>(null)
+  const [deceasedName, setDeceasedName] = useState('')
+  const [isProcessing, setIsProcessing] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Process image with canvas
+  const processImage = async (file: File) => {
+    setIsProcessing(true)
+
+    const img = new Image()
+    const template = new Image()
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')!
+
+    // Load images
+    const loadImg = (src: string) => new Promise<void>((resolve) => {
+      img.onload = () => resolve()
+      img.src = src
+    })
+
+    const loadTemplate = () => new Promise<void>((resolve) => {
+      template.onload = () => resolve()
+      template.src = '/template.jpg'
+    })
+
+    await Promise.all([loadImg(URL.createObjectURL(file)), loadTemplate()])
+
+    // Canvas size based on template (A4 ratio at high DPI)
+    canvas.width = 1240
+    canvas.height = 1754
+
+    // Draw template background
+    ctx.drawImage(template, 0, 0, canvas.width, canvas.height)
+
+    // Calculate circular crop position (center of template)
+    const centerX = canvas.width / 2
+    const centerY = canvas.height / 2 - 50
+    const circleRadius = 220
+
+    // Create circular clip with feathered edges
+    ctx.save()
+    ctx.beginPath()
+    ctx.arc(centerX, centerY, circleRadius, 0, Math.PI * 2)
+    ctx.clip()
+
+    // Calculate image dimensions to cover circle
+    const scale = Math.max((circleRadius * 2) / img.width, (circleRadius * 2) / img.height) * 1.5
+    const scaledWidth = img.width * scale
+    const scaledHeight = img.height * scale
+    const x = centerX - scaledWidth / 2
+    const y = centerY - scaledHeight / 2
+
+    // Draw uploaded image
+    ctx.drawImage(img, x, y, scaledWidth, scaledHeight)
+    ctx.restore()
+
+    // Add feather effect (gradient at edges)
+    const gradient = ctx.createRadialGradient(centerX, centerY, circleRadius * 0.7, centerX, centerY, circleRadius)
+    gradient.addColorStop(0, 'rgba(0,0,0,0)')
+    gradient.addColorStop(1, 'rgba(0,0,0,0.3)')
+
+    ctx.fillStyle = gradient
+    ctx.beginPath()
+    ctx.arc(centerX, centerY, circleRadius, 0, Math.PI * 2)
+    ctx.fill()
+
+    // Add deceased name if provided
+    if (deceasedName.trim()) {
+      ctx.save()
+      ctx.textAlign = 'center'
+      ctx.fillStyle = '#000000'
+
+      // Draw name below the image
+      const nameY = centerY + circleRadius + 80
+      ctx.font = 'bold 48px serif'
+      ctx.fillText(deceasedName.toUpperCase(), centerX, nameY)
+      ctx.restore()
+    }
+
+    // Convert to blob
+    canvas.toBlob((blob) => {
+      if (blob) {
+        const url = URL.createObjectURL(blob)
+        setProcessedImage(url)
+        setIsProcessing(false)
+      }
+    }, 'image/png')
+  }
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        setUploadedImage(e.target?.result as string)
+        setProcessedImage(null)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const handleProcess = () => {
+    if (uploadedImage && fileInputRef.current?.files?.[0]) {
+      processImage(fileInputRef.current.files[0])
+    }
+  }
+
+  const handleDownload = () => {
+    if (processedImage) {
+      const a = document.createElement('a')
+      a.href = processedImage
+      a.download = `tahlil-${deceasedName || 'card'}.png`
+      a.click()
+    }
+  }
+
+  const handleReset = () => {
+    setUploadedImage(null)
+    setProcessedImage(null)
+    setDeceasedName('')
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
+      <div className="w-full max-w-2xl">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-white mb-2">Arwah</h1>
+          <p className="text-slate-400">Tahlil / Al-Fatihah Memorial Card Generator</p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        {/* Main Card */}
+        <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-8 shadow-2xl border border-slate-700">
+          {!processedImage ? (
+            <>
+              {/* Upload Section */}
+              <div className="mb-6">
+                <label
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex flex-col items-center justify-center w-full h-64 border-2 border-dashed border-slate-600 rounded-xl cursor-pointer hover:border-slate-400 hover:bg-slate-700/30 transition-all"
+                >
+                  {uploadedImage ? (
+                    <div className="relative">
+                      <img
+                        src={uploadedImage}
+                        alt="Preview"
+                        className="h-56 object-contain rounded-lg"
+                      />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleReset()
+                        }}
+                        className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <Upload className="w-12 h-12 text-slate-400 mb-4" />
+                      <p className="text-slate-300 font-medium">Click to upload photo</p>
+                      <p className="text-slate-500 text-sm mt-2">JPG, PNG supported</p>
+                    </>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
+              {/* Name Input (Optional) */}
+              <div className="mb-6">
+                <label className="block text-slate-300 text-sm font-medium mb-2">
+                  Nama Si Mat (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={deceasedName}
+                  onChange={(e) => setDeceasedName(e.target.value)}
+                  placeholder="Contoh: Allahyarham Haji Ahmad"
+                  className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                />
+              </div>
+
+              {/* Process Button */}
+              <button
+                onClick={handleProcess}
+                disabled={!uploadedImage || isProcessing}
+                className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-all flex items-center justify-center gap-2"
+              >
+                {isProcessing ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <Upload size={20} />
+                    Generate Card
+                  </>
+                )}
+              </button>
+            </>
+          ) : (
+            <>
+              {/* Result Section */}
+              <div className="mb-6">
+                <img
+                  src={processedImage}
+                  alt="Generated Card"
+                  className="w-full rounded-lg shadow-lg"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-4">
+                <button
+                  onClick={handleDownload}
+                  className="flex-1 py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg transition-all flex items-center justify-center gap-2"
+                >
+                  <Download size={20} />
+                  Download
+                </button>
+                <button
+                  onClick={handleReset}
+                  className="px-6 py-4 bg-slate-700 hover:bg-slate-600 text-white font-semibold rounded-lg transition-all"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </>
+          )}
         </div>
-      </main>
+
+        {/* Footer */}
+        <p className="text-center text-slate-500 text-sm mt-6">
+          Foto diproses di pelayar sahaja • Tiada data dimuat naik
+        </p>
+      </div>
     </div>
-  );
+  )
 }
