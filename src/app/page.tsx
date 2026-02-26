@@ -13,6 +13,7 @@ export default function Home() {
 
   // Manual crop controls
   const [circleSize, setCircleSize] = useState(18) // Percentage of min dimension
+  const [imageScale, setImageScale] = useState(100) // Image scale percentage (50-200)
   const [featherAmount, setFeatherAmount] = useState(30) // Feather percentage (0-100)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -24,11 +25,12 @@ export default function Home() {
     name: string,
     options: {
       circleSize: number
+      imageScale: number
       featherAmount: number
       isPreview?: boolean
     }
   ): Promise<string | null> => {
-    const { circleSize: size, featherAmount: feather, isPreview = false } = options
+    const { circleSize: size, imageScale: imgScale, featherAmount: feather, isPreview = false } = options
 
     const img = new Image()
     const template = new Image()
@@ -61,21 +63,20 @@ export default function Home() {
     const circleRadius = Math.min(canvas.width, canvas.height) * (size / 100)
 
     // Create a temporary canvas for the photo with feathering
-    // FIXED SIZE - image scale doesn't change when circle size changes
     const tempCanvas = document.createElement('canvas')
     const tempCtx = tempCanvas.getContext('2d')!
 
     // Use a fixed large enough size for the temp canvas
-    // This ensures the image stays at consistent scale
-    const maxRadius = Math.min(canvas.width, canvas.height) * 0.30 // Fixed at 30% max
+    const maxRadius = Math.min(canvas.width, canvas.height) * 0.30
     const fixedSize = maxRadius * 2 + 100 // Extra space for feathering
     tempCanvas.width = fixedSize
     tempCanvas.height = fixedSize
 
-    // Calculate image dimensions at FIXED scale (doesn't change with circle size)
-    const scale = (maxRadius * 2) / Math.max(img.width, img.height) * 1.2
-    const scaledWidth = img.width * scale
-    const scaledHeight = img.height * scale
+    // Calculate image dimensions at USER-CONTROLLED scale
+    const baseScale = (maxRadius * 2) / Math.max(img.width, img.height)
+    const finalScale = baseScale * (imgScale / 100)
+    const scaledWidth = img.width * finalScale
+    const scaledHeight = img.height * finalScale
 
     // Center image on temp canvas
     const tempX = (fixedSize - scaledWidth) / 2
@@ -136,7 +137,7 @@ export default function Home() {
 
       ctx.save()
       ctx.textAlign = 'center'
-      ctx.font = `bold ${fontSize}px Arial`
+      ctx.font = `bold ${fontSize}px Georgia, serif` // Classy font
 
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
       ctx.fillText(name.toUpperCase(), centerX + 2, nameY + 2)
@@ -174,6 +175,7 @@ export default function Home() {
       previewTimeoutRef.current = setTimeout(() => {
         processImage(uploadedFile, deceasedName, {
           circleSize,
+          imageScale,
           featherAmount,
           isPreview: true
         }).then(setLivePreview)
@@ -185,7 +187,7 @@ export default function Home() {
         clearTimeout(previewTimeoutRef.current)
       }
     }
-  }, [circleSize, featherAmount, deceasedName, uploadedFile])
+  }, [circleSize, imageScale, featherAmount, deceasedName, uploadedFile])
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -205,6 +207,7 @@ export default function Home() {
       setIsProcessing(true)
       const result = await processImage(uploadedFile, deceasedName, {
         circleSize,
+        imageScale,
         featherAmount
       })
       setProcessedImage(result)
@@ -228,6 +231,7 @@ export default function Home() {
     setLivePreview(null)
     setDeceasedName('')
     setCircleSize(18)
+    setImageScale(100)
     setFeatherAmount(30)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
@@ -317,7 +321,7 @@ export default function Home() {
               {/* Manual Crop Controls */}
               {uploadedImage && (
                 <div className="mb-6 p-4 bg-slate-700/50 rounded-lg space-y-4">
-                  <h3 className="text-white font-medium mb-3">Adjust Crop & Feather</h3>
+                  <h3 className="text-white font-medium mb-3">Adjust Crop & Image</h3>
 
                   {/* Circle Size */}
                   <div>
@@ -333,6 +337,23 @@ export default function Home() {
                       onChange={(e) => setCircleSize(Number(e.target.value))}
                       className="w-full accent-emerald-500"
                     />
+                  </div>
+
+                  {/* Image Scale */}
+                  <div>
+                    <label className="text-slate-300 text-sm flex justify-between mb-1">
+                      <span>Image Size (Zoom)</span>
+                      <span className="text-slate-400">{imageScale}%</span>
+                    </label>
+                    <input
+                      type="range"
+                      min="50"
+                      max="200"
+                      value={imageScale}
+                      onChange={(e) => setImageScale(Number(e.target.value))}
+                      className="w-full accent-emerald-500"
+                    />
+                    <p className="text-slate-500 text-xs mt-1">50% = smaller, 100% = default, 200% = larger</p>
                   </div>
 
                   {/* Feather Amount */}
