@@ -13,8 +13,6 @@ export default function Home() {
 
   // Manual crop controls
   const [circleSize, setCircleSize] = useState(18) // Percentage of min dimension
-  const [offsetX, setOffsetX] = useState(0) // Horizontal offset
-  const [offsetY, setOffsetY] = useState(-50) // Vertical offset
   const [featherAmount, setFeatherAmount] = useState(30) // Feather percentage (0-100)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -26,13 +24,11 @@ export default function Home() {
     name: string,
     options: {
       circleSize: number
-      offsetX: number
-      offsetY: number
       featherAmount: number
       isPreview?: boolean
     }
   ): Promise<string | null> => {
-    const { circleSize: size, offsetX: offX, offsetY: offY, featherAmount: feather, isPreview = false } = options
+    const { circleSize: size, featherAmount: feather, isPreview = false } = options
 
     const img = new Image()
     const template = new Image()
@@ -59,30 +55,32 @@ export default function Home() {
     // Draw template background at original size
     ctx.drawImage(template, 0, 0)
 
-    // Calculate circular crop position (with manual offsets)
-    const centerX = canvas.width / 2 + offX
-    const centerY = canvas.height / 2 + offY
+    // Calculate circular crop position (always dead center)
+    const centerX = canvas.width / 2
+    const centerY = canvas.height / 2 - 50
     const circleRadius = Math.min(canvas.width, canvas.height) * (size / 100)
 
     // Create a temporary canvas for the photo with feathering
     const tempCanvas = document.createElement('canvas')
     const tempCtx = tempCanvas.getContext('2d')!
-    const tempSize = circleRadius * 2 + (circleRadius * feather / 100) * 2
-    tempCanvas.width = tempSize
-    tempCanvas.height = tempSize
 
-    // Calculate image dimensions to fit circle
-    const scale = (circleRadius * 2) / Math.max(img.width, img.height) * 1.2
+    // Fixed canvas size based on circle radius - this is the actual crop size
+    const cropSize = circleRadius * 2
+    tempCanvas.width = cropSize
+    tempCanvas.height = cropSize
+
+    // Calculate image dimensions to fill the circle (cover mode)
+    const scale = Math.max(cropSize / img.width, cropSize / img.height)
     const scaledWidth = img.width * scale
     const scaledHeight = img.height * scale
 
-    // Draw image on temp canvas
-    const tempX = (tempSize - scaledWidth) / 2
-    const tempY = (tempSize - scaledHeight) / 2
+    // Center image on temp canvas
+    const tempX = (cropSize - scaledWidth) / 2
+    const tempY = (cropSize - scaledHeight) / 2
     tempCtx.drawImage(img, tempX, tempY, scaledWidth, scaledHeight)
 
     // Convert to grayscale on temp canvas
-    const imageData = tempCtx.getImageData(0, 0, tempSize, tempSize)
+    const imageData = tempCtx.getImageData(0, 0, cropSize, cropSize)
     const data = imageData.data
 
     for (let i = 0; i < data.length; i += 4) {
@@ -95,24 +93,27 @@ export default function Home() {
     tempCtx.putImageData(imageData, 0, 0)
 
     // Create proper feather effect using alpha mask
-    const featherSize = circleRadius * feather / 100
+    // Feather amount: 0 = no feather (sharp edge), 100 = maximum feather
+    const innerRadius = circleRadius * (1 - feather / 200) // Inner radius shrinks as feather increases
+    const outerRadius = circleRadius // Outer radius stays at circle edge
+
     const gradient = tempCtx.createRadialGradient(
-      tempSize / 2, tempSize / 2, circleRadius * 0.7,
-      tempSize / 2, tempSize / 2, circleRadius + featherSize
+      cropSize / 2, cropSize / 2, innerRadius,
+      cropSize / 2, cropSize / 2, outerRadius
     )
-    gradient.addColorStop(0, 'rgba(0, 0, 0, 1)')
-    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)')
+    gradient.addColorStop(0, 'rgba(0, 0, 0, 1)')   // Fully opaque at center
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)')   // Transparent at edge
 
     tempCtx.globalCompositeOperation = 'destination-in'
     tempCtx.fillStyle = gradient
-    tempCtx.fillRect(0, 0, tempSize, tempSize)
+    tempCtx.fillRect(0, 0, cropSize, cropSize)
 
-    // Draw the feathered photo onto the main canvas
+    // Draw the feathered photo onto the main canvas (centered)
     ctx.globalCompositeOperation = 'source-over'
     ctx.drawImage(
       tempCanvas,
-      centerX - tempSize / 2,
-      centerY - tempSize / 2
+      centerX - cropSize / 2,
+      centerY - cropSize / 2
     )
 
     // Add deceased name if provided - DRAWN LAST for top layer
@@ -160,8 +161,6 @@ export default function Home() {
       previewTimeoutRef.current = setTimeout(() => {
         processImage(uploadedFile, deceasedName, {
           circleSize,
-          offsetX,
-          offsetY,
           featherAmount,
           isPreview: true
         }).then(setLivePreview)
@@ -173,7 +172,7 @@ export default function Home() {
         clearTimeout(previewTimeoutRef.current)
       }
     }
-  }, [circleSize, offsetX, offsetY, featherAmount, deceasedName, uploadedFile])
+  }, [circleSize, featherAmount, deceasedName, uploadedFile])
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -193,8 +192,6 @@ export default function Home() {
       setIsProcessing(true)
       const result = await processImage(uploadedFile, deceasedName, {
         circleSize,
-        offsetX,
-        offsetY,
         featherAmount
       })
       setProcessedImage(result)
@@ -218,8 +215,6 @@ export default function Home() {
     setLivePreview(null)
     setDeceasedName('')
     setCircleSize(18)
-    setOffsetX(0)
-    setOffsetY(-50)
     setFeatherAmount(30)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
@@ -314,7 +309,7 @@ export default function Home() {
                   {/* Circle Size */}
                   <div>
                     <label className="text-slate-300 text-sm flex justify-between mb-1">
-                      <span>Circle Size</span>
+                      <span>Circle Size (Crop Area)</span>
                       <span className="text-slate-400">{circleSize}%</span>
                     </label>
                     <input
@@ -327,42 +322,10 @@ export default function Home() {
                     />
                   </div>
 
-                  {/* Horizontal Position */}
-                  <div>
-                    <label className="text-slate-300 text-sm flex justify-between mb-1">
-                      <span>Horizontal Position</span>
-                      <span className="text-slate-400">{offsetX}px</span>
-                    </label>
-                    <input
-                      type="range"
-                      min="-200"
-                      max="200"
-                      value={offsetX}
-                      onChange={(e) => setOffsetX(Number(e.target.value))}
-                      className="w-full accent-emerald-500"
-                    />
-                  </div>
-
-                  {/* Vertical Position */}
-                  <div>
-                    <label className="text-slate-300 text-sm flex justify-between mb-1">
-                      <span>Vertical Position</span>
-                      <span className="text-slate-400">{offsetY}px</span>
-                    </label>
-                    <input
-                      type="range"
-                      min="-200"
-                      max="200"
-                      value={offsetY}
-                      onChange={(e) => setOffsetY(Number(e.target.value))}
-                      className="w-full accent-emerald-500"
-                    />
-                  </div>
-
                   {/* Feather Amount */}
                   <div>
                     <label className="text-slate-300 text-sm flex justify-between mb-1">
-                      <span>Feather Amount</span>
+                      <span>Feather Amount (Edge Softness)</span>
                       <span className="text-slate-400">{featherAmount}%</span>
                     </label>
                     <input
@@ -373,6 +336,7 @@ export default function Home() {
                       onChange={(e) => setFeatherAmount(Number(e.target.value))}
                       className="w-full accent-emerald-500"
                     />
+                    <p className="text-slate-500 text-xs mt-1">0% = sharp edge, 100% = very soft feather</p>
                   </div>
                 </div>
               )}
